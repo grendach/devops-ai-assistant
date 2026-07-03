@@ -24,6 +24,7 @@ venv/
 
 # Terraform local and generated files
 **/.terraform/*
+**/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 crash.log
@@ -40,4 +41,3 @@ terraform.rc
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
-
