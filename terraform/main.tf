@@ -34,6 +34,20 @@ resource "aws_dynamodb_table" "history" {
   tags = local.common_tags
 }
 
+# Terraform creates only the secret container. Add the token separately so it
+# never appears in Terraform configuration or state.
+resource "aws_secretsmanager_secret" "github_token" {
+  name        = var.github_token_secret_name
+  description = "Fine-grained GitHub token used by the DevOps AI PR reviewer."
+  tags        = local.common_tags
+}
+
+resource "aws_secretsmanager_secret" "review_api_key" {
+  name        = var.review_api_key_secret_name
+  description = "Shared API key protecting the GitHub PR review endpoint."
+  tags        = local.common_tags
+}
+
 resource "aws_iam_role" "lambda" {
   name = "${local.lambda_name}-role"
 
@@ -79,6 +93,14 @@ resource "aws_iam_policy" "app" {
           "dynamodb:Query"
         ]
         Resource = aws_dynamodb_table.history.arn
+      },
+      {
+        Effect = "Allow"
+        Action = "secretsmanager:GetSecretValue"
+        Resource = [
+          aws_secretsmanager_secret.github_token.arn,
+          aws_secretsmanager_secret.review_api_key.arn
+        ]
       }
     ]
   })
@@ -96,22 +118,25 @@ resource "aws_cloudwatch_log_group" "lambda" {
 }
 
 resource "aws_lambda_function" "api" {
-  function_name = local.lambda_name
-  role          = aws_iam_role.lambda.arn
-  runtime       = "python3.12"
-  handler       = "main.handler"
-  filename      = var.lambda_zip_path
+  function_name    = local.lambda_name
+  role             = aws_iam_role.lambda.arn
+  runtime          = "python3.12"
+  handler          = "main.handler"
+  filename         = var.lambda_zip_path
   source_code_hash = filebase64sha256(var.lambda_zip_path)
-  timeout       = 60
-  memory_size   = 512
+  timeout          = 60
+  memory_size      = 512
 
   environment {
     variables = {
-      APP_NAME          = local.name
-      HISTORY_TABLE     = aws_dynamodb_table.history.name
-      BEDROCK_REGION    = var.bedrock_region
-      BEDROCK_MODEL_ID  = var.bedrock_model_id
-      ALLOWED_ORIGINS   = var.allowed_origins
+      APP_NAME                  = local.name
+      HISTORY_TABLE             = aws_dynamodb_table.history.name
+      BEDROCK_REGION            = var.bedrock_region
+      BEDROCK_MODEL_ID          = var.bedrock_model_id
+      ALLOWED_ORIGINS           = var.allowed_origins
+      ALLOWED_GITHUB_REPOS      = join(",", var.allowed_github_repos)
+      GITHUB_TOKEN_SECRET_ARN   = aws_secretsmanager_secret.github_token.arn
+      REVIEW_API_KEY_SECRET_ARN = aws_secretsmanager_secret.review_api_key.arn
     }
   }
 

@@ -8,6 +8,7 @@ It provides a FastAPI backend deployed as AWS Lambda behind API Gateway. The bac
 
 - `GET /health` health check
 - `POST /ai/explain` DevOps issue explanation endpoint
+- `POST /github/review` reviews an allowed GitHub PR and publishes a review comment
 - Amazon Bedrock integration with Amazon Nova Lite by default
 - DynamoDB history table for request metadata and token usage
 - Terraform deployment
@@ -76,7 +77,55 @@ After apply, Terraform prints:
 ```text
 health_url
 explain_url
+github_review_url
 ```
+
+## Configure GitHub PR reviews
+
+The allowed repository defaults to `grendach/expense-tracker`. Create a
+fine-grained GitHub personal access token limited to that repository with:
+
+- **Contents: Read-only**
+- **Pull requests: Read and write**
+
+Terraform creates empty Secrets Manager containers, but never stores either
+secret value in Terraform state. After the first `terraform apply`, populate
+them from your terminal:
+
+```bash
+read -s GITHUB_TOKEN
+aws secretsmanager put-secret-value \
+  --secret-id "$(terraform output -raw github_token_secret_arn)" \
+  --secret-string "$GITHUB_TOKEN"
+unset GITHUB_TOKEN
+
+REVIEW_API_KEY="$(openssl rand -hex 32)"
+aws secretsmanager put-secret-value \
+  --secret-id "$(terraform output -raw review_api_key_secret_arn)" \
+  --secret-string "$REVIEW_API_KEY"
+```
+
+Keep `REVIEW_API_KEY` available for the test below. It protects the public API
+endpoint from unauthorized review submissions.
+
+### Review and comment on a pull request
+
+Replace `123` with an open pull request number:
+
+```bash
+curl -X POST "$(terraform output -raw github_review_url)" \
+  -H "Content-Type: application/json" \
+  -H "X-Review-Key: $REVIEW_API_KEY" \
+  -d '{
+    "repository": "grendach/expense-tracker",
+    "pull_number": 123,
+    "max_tokens": 1200
+  }'
+```
+
+The agent fetches the PR and its changed-file patches, asks Bedrock for a code
+review, and publishes the result as a GitHub PR review with event `COMMENT`.
+It cannot access repositories outside `allowed_github_repos`.
 
 ## Test health
 
@@ -138,6 +187,7 @@ aws_region        = "eu-west-1"
 bedrock_region    = "eu-west-1"
 bedrock_model_id  = "eu.amazon.nova-lite-v1:0"
 allowed_origins   = "*"
+allowed_github_repos = ["grendach/expense-tracker"]
 ```
 
 For production, replace `allowed_origins = "*"` with your real frontend domain.
