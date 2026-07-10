@@ -28,6 +28,29 @@ variable "allowed_origins" {
   default     = "*"
 }
 
+variable "allowed_github_repos" {
+  description = "GitHub repositories the agent may review and comment on, in owner/repository format."
+  type        = list(string)
+  default     = ["grendach/expense-tracker"]
+
+  validation {
+    condition     = length(var.allowed_github_repos) > 0 && alltrue([for repo in var.allowed_github_repos : can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo))])
+    error_message = "Each allowed GitHub repository must use owner/repository format."
+  }
+}
+
+variable "github_token_secret_name" {
+  description = "Secrets Manager secret name whose value is a fine-grained GitHub token."
+  type        = string
+  default     = "devops-ai-assistant/github-token"
+}
+
+variable "review_api_key_secret_name" {
+  description = "Secrets Manager secret name containing the key required by the PR review endpoint."
+  type        = string
+  default     = "devops-ai-assistant/review-api-key"
+}
+
 variable "lambda_zip_path" {
   description = "Path to packaged Lambda zip. Run scripts/package_lambda.sh before terraform apply."
   type        = string
